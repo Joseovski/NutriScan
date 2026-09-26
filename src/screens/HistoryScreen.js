@@ -11,8 +11,9 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 
 import { listarAnalises, excluirAnalise } from "../database/db";
-import { sincronizarPendentes, estaConectado } from "../services/syncService";
+import { sincronizarPendentes, baixarAnalisesDoSupabase, estaConectado } from "../services/syncService";
 import { STATUS_LABEL, STATUS_COLOR } from "../services/classificationService";
+import {supabase} from "../config/supabase";
 
 export default function HistoryScreen({ navigation }) {
   const [analises, setAnalises] = useState([]);
@@ -20,27 +21,49 @@ export default function HistoryScreen({ navigation }) {
   const [statusSync, setStatusSync] = useState("");
 
   const carregarHistorico = useCallback(async () => {
-    setCarregando(true);
-    try {
-      const dados = await listarAnalises();
-      setAnalises(dados);
+  setCarregando(true);
 
-      const online = await estaConectado();
-      setStatusSync(online ? "Conectado" : "Offline — sincroniza quando houver conexão");
+  try {
+    const {
+  data: { session },
+  error: sessionError,
+} = await supabase.auth.getSession();
 
-      if (online) {
-        const { enviados } = await sincronizarPendentes();
-        if (enviados > 0) {
-          const atualizados = await listarAnalises();
-          setAnalises(atualizados);
-        }
-      }
-    } catch (err) {
-      console.warn("[HistoryScreen] Erro ao carregar histórico:", err);
-    } finally {
-      setCarregando(false);
+if (sessionError || !session?.user) {
+  throw new Error("Usuário não autenticado.");
+}
+
+const user = session.user;
+
+    const online = await estaConectado();
+
+    setStatusSync(
+      online
+        ? "Conectado"
+        : "Offline — sincroniza quando houver conexão"
+    );
+
+    if (online) {
+      // Primeiro envia o que ainda está pendente no SQLite.
+      await sincronizarPendentes();
+
+      // Depois baixa do Supabase o histórico deste usuário.
+      await baixarAnalisesDoSupabase(user.id);
     }
-  }, []);
+
+    // Por último, lê o histórico atualizado do SQLite.
+    const dados = await listarAnalises(user.id);
+
+    setAnalises(dados);
+  } catch (err) {
+    console.warn(
+      "[HistoryScreen] Erro ao carregar histórico:",
+      err
+    );
+  } finally {
+    setCarregando(false);
+  }
+}, []);
 
   // Recarrega toda vez que a tela ganha foco (ex: após nova análise).
   useFocusEffect(
@@ -155,7 +178,7 @@ const styles = StyleSheet.create({
   emptyText: { color: "#999", textAlign: "center", fontSize: 14 },
   fab: {
     position: "absolute",
-    bottom: 24,
+    bottom: 70,
     alignSelf: "center",
     backgroundColor: "#1F3864",
     paddingVertical: 14,

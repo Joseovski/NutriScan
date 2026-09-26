@@ -90,7 +90,7 @@ function LinhaValor({ label, valor, unidade }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
-  content: { padding: 20, alignItems: "center" },
+  content: { padding: 20, paddingBottom: 50, alignItems: "center" },
   imagem: { width: 220, height: 220, borderRadius: 12, marginBottom: 16, backgroundColor: "#eee" },
   nomeProduto: { fontSize: 20, fontWeight: "700", textAlign: "center", marginBottom: 12, color: "#222" },
   statusBadge: { paddingHorizontal: 24, paddingVertical: 10, borderRadius: 20, marginBottom: 20 },

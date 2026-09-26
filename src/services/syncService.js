@@ -11,7 +11,7 @@
 
 import NetInfo from "@react-native-community/netinfo";
 import { supabase } from "../config/supabase";
-import { listarAnalisesPendentes, marcarComoSincronizado } from "../database/db";
+import { listarAnalisesPendentes, marcarComoSincronizado, salvarAnaliseSincronizada, } from "../database/db";
 
 /**
  * Verifica se o dispositivo está com conexão à internet no momento.
@@ -30,39 +30,109 @@ export async function estaConectado() {
  */
 export async function sincronizarPendentes() {
   const conectado = await estaConectado();
+
   if (!conectado) {
     return { enviados: 0, falhas: 0 };
   }
 
-  const pendentes = await listarAnalisesPendentes();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    console.warn("[Sync] Usuário não autenticado.");
+    return { enviados: 0, falhas: 0 };
+  }
+
+  const pendentes = await listarAnalisesPendentes(user.id);
+
   let enviados = 0;
   let falhas = 0;
 
   for (const analise of pendentes) {
     try {
-      const { error } = await supabase.from("analises_nutricionais").upsert({
-        id: analise.id,
-        nome_produto: analise.nome_produto,
-        calorias: analise.calorias,
-        acucares: analise.acucares,
-        sodio: analise.sodio,
-        gorduras_saturadas: analise.gorduras_saturadas,
-        status: analise.status,
-        texto_bruto_ocr: analise.texto_bruto_ocr,
-        criado_em: analise.criado_em,
-      });
+      const { error } = await supabase
+        .from("analises_nutricionais")
+        .upsert({
+          id: analise.id,
+          user_id: analise.user_id,
+          nome_produto: analise.nome_produto,
+          calorias: analise.calorias,
+          acucares: analise.acucares,
+          sodio: analise.sodio,
+          gorduras_saturadas: analise.gorduras_saturadas,
+          status: analise.status,
+          texto_bruto_ocr: analise.texto_bruto_ocr,
+          criado_em: analise.criado_em,
+        });
 
       if (error) throw error;
 
       await marcarComoSincronizado(analise.id);
       enviados += 1;
     } catch (err) {
-      console.warn(`[Sync] Falha ao sincronizar análise ${analise.id}:`, err.message);
+      console.warn(
+        `[Sync] Falha ao sincronizar análise ${analise.id}:`,
+        err.message
+      );
+
       falhas += 1;
     }
   }
 
   return { enviados, falhas };
+}
+
+/**
+ * Baixa do Supabase as análises do usuário e garante que
+ * elas também estejam disponíveis no SQLite local.
+ */
+export async function baixarAnalisesDoSupabase(userId) {
+  const conectado = await estaConectado();
+
+  if (!conectado) {
+    return { baixados: 0, falhas: 0 };
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("analises_nutricionais")
+      .select(
+        "id,user_id,nome_produto,calorias,acucares,sodio,gorduras_saturadas,status,texto_bruto_ocr,criado_em"
+      )
+      .eq("user_id", userId)
+      .order("criado_em", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    let baixados = 0;
+    let falhas = 0;
+
+    for (const analise of data ?? []) {
+      try {
+        await salvarAnaliseSincronizada(analise);
+        baixados += 1;
+      } catch (err) {
+        console.warn(
+          `[Sync] Falha ao salvar análise ${analise.id} no SQLite:`,
+          err.message
+        );
+        falhas += 1;
+      }
+    }
+
+    return { baixados, falhas };
+  } catch (err) {
+    console.warn(
+      "[Sync] Falha ao baixar análises do Supabase:",
+      err.message
+    );
+
+    return { baixados: 0, falhas: 1 };
+  }
 }
 
 /**

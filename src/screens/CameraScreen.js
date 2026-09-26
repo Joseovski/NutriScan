@@ -14,6 +14,7 @@ import { classifyProduct } from "../services/classificationService";
 import { inserirAnalise } from "../database/db";
 import { sincronizarPendentes } from "../services/syncService";
 import { gerarUUID } from "../utils/uuid";
+import { supabase } from "../config/supabase";
 
 export default function CameraScreen({ navigation }) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -88,18 +89,28 @@ export default function CameraScreen({ navigation }) {
         return;
       }
 
-      const analise = {
-        id: gerarUUID(),
-        nomeProduto,
-        calorias: valores.calorias,
-        acucares: valores.acucares,
-        sodio: valores.sodio,
-        gordurasSaturadas: valores.gordurasSaturadas,
-        status,
-        textoBrutoOcr: textoBruto,
-        imagemUri: foto.uri,
-        criadoEm: new Date().toISOString(),
-      };
+      const {
+  data: { user },
+  error: userError,
+} = await supabase.auth.getUser();
+
+if (userError || !user) {
+  throw new Error("Não foi possível identificar o usuário logado.");
+}
+
+const analise = {
+  id: gerarUUID(),
+  userId: user.id,
+  nomeProduto,
+  calorias: valores.calorias,
+  acucares: valores.acucares,
+  sodio: valores.sodio,
+  gordurasSaturadas: valores.gordurasSaturadas,
+  status,
+  textoBrutoOcr: textoBruto,
+  imagemUri: foto.uri,
+  criadoEm: new Date().toISOString(),
+};
 
       setMensagemStatus("Salvando análise...");
       await inserirAnalise(analise);

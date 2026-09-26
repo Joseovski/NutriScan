@@ -1,8 +1,9 @@
-// Configuração do cliente Supabase.
-// As credenciais vêm do app.config.js (que lê do arquivo .env).
+
 
 import "react-native-url-polyfill/auto";
 import "react-native-get-random-values";
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient } from "@supabase/supabase-js";
 import Constants from "expo-constants";
 
@@ -17,9 +18,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
-    // Sem tela de login neste MVP: cada dispositivo sincroniza como "anônimo".
-    // Para produção, trocar por autenticação real (supabase.auth.signIn...).
-    persistSession: false,
-    autoRefreshToken: false,
+    storage: AsyncStorage,
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
   },
 });

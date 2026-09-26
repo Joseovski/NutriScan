@@ -1,8 +1,5 @@
 // Camada de acesso ao Expo SQLite — armazenamento local para
 // funcionamento offline-first.
-//
-// Usa a API assíncrona do expo-sqlite (SDK 51+), que é a recomendada
-// atualmente pela documentação oficial.
 
 import * as SQLite from "expo-sqlite";
 
@@ -10,7 +7,7 @@ let dbInstance = null;
 
 /**
  * Abre (ou cria) o banco local e garante que a tabela exista.
- * Deve ser chamado uma vez na inicialização do app.
+ * Também garante que a coluna user_id exista em bancos já criados.
  */
 export async function initDatabase() {
   if (dbInstance) return dbInstance;
@@ -19,8 +16,10 @@ export async function initDatabase() {
 
   await dbInstance.execAsync(`
     PRAGMA journal_mode = WAL;
+
     CREATE TABLE IF NOT EXISTS analises_nutricionais (
       id TEXT PRIMARY KEY NOT NULL,
+      user_id TEXT,
       nome_produto TEXT,
       calorias REAL,
       acucares REAL,
@@ -34,6 +33,22 @@ export async function initDatabase() {
     );
   `);
 
+  // Migração para bancos que já existiam antes da criação do user_id.
+  const colunas = await dbInstance.getAllAsync(
+    `PRAGMA table_info(analises_nutricionais)`
+  );
+
+  const possuiUserId = colunas.some(
+    (coluna) => coluna.name === "user_id"
+  );
+
+  if (!possuiUserId) {
+    await dbInstance.execAsync(`
+      ALTER TABLE analises_nutricionais
+      ADD COLUMN user_id TEXT;
+    `);
+  }
+
   return dbInstance;
 }
 
@@ -43,21 +58,36 @@ function getDb() {
       "Banco de dados não inicializado. Chame initDatabase() antes de usar."
     );
   }
+
   return dbInstance;
 }
 
 /**
  * Insere uma nova análise no banco local.
- * @param {object} analise - objeto com os campos da análise (ver schema acima)
  */
 export async function inserirAnalise(analise) {
   const db = getDb();
+
   await db.runAsync(
     `INSERT INTO analises_nutricionais
-      (id, nome_produto, calorias, acucares, sodio, gorduras_saturadas, status, texto_bruto_ocr, imagem_uri, criado_em, sincronizado)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      (
+        id,
+        user_id,
+        nome_produto,
+        calorias,
+        acucares,
+        sodio,
+        gorduras_saturadas,
+        status,
+        texto_bruto_ocr,
+        imagem_uri,
+        criado_em,
+        sincronizado
+      )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
     [
       analise.id,
+      analise.userId,
       analise.nomeProduto,
       analise.calorias,
       analise.acucares,
@@ -72,32 +102,43 @@ export async function inserirAnalise(analise) {
 }
 
 /**
- * Retorna todas as análises salvas localmente, mais recentes primeiro.
+ * Retorna todas as análises salvas localmente.
  */
-export async function listarAnalises() {
+export async function listarAnalises(userId) {
   const db = getDb();
+
   return db.getAllAsync(
-    `SELECT * FROM analises_nutricionais ORDER BY criado_em DESC`
+    `SELECT * FROM analises_nutricionais
+     WHERE user_id = ?
+     ORDER BY criado_em DESC`,
+    [userId]
   );
 }
 
 /**
- * Retorna apenas as análises que ainda não foram sincronizadas com o Supabase.
+ * Retorna apenas as análises ainda não sincronizadas.
  */
-export async function listarAnalisesPendentes() {
+export async function listarAnalisesPendentes(userId) {
   const db = getDb();
+
   return db.getAllAsync(
-    `SELECT * FROM analises_nutricionais WHERE sincronizado = 0`
+    `SELECT * FROM analises_nutricionais
+     WHERE sincronizado = 0
+       AND user_id = ?`,
+    [userId]
   );
 }
 
 /**
- * Marca uma análise como sincronizada após o envio bem-sucedido ao Supabase.
+ * Marca uma análise como sincronizada.
  */
 export async function marcarComoSincronizado(id) {
   const db = getDb();
+
   await db.runAsync(
-    `UPDATE analises_nutricionais SET sincronizado = 1 WHERE id = ?`,
+    `UPDATE analises_nutricionais
+     SET sincronizado = 1
+     WHERE id = ?`,
     [id]
   );
 }
@@ -107,5 +148,56 @@ export async function marcarComoSincronizado(id) {
  */
 export async function excluirAnalise(id) {
   const db = getDb();
-  await db.runAsync(`DELETE FROM analises_nutricionais WHERE id = ?`, [id]);
+
+  await db.runAsync(
+    `DELETE FROM analises_nutricionais
+     WHERE id = ?`,
+    [id]
+  );
+}
+export async function salvarAnaliseSincronizada(analise) {
+  const db = getDb();
+
+  await db.runAsync(
+    `INSERT INTO analises_nutricionais
+      (
+        id,
+        user_id,
+        nome_produto,
+        calorias,
+        acucares,
+        sodio,
+        gorduras_saturadas,
+        status,
+        texto_bruto_ocr,
+        imagem_uri,
+        criado_em,
+        sincronizado
+      )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+     ON CONFLICT(id) DO UPDATE SET
+       user_id = excluded.user_id,
+       nome_produto = excluded.nome_produto,
+       calorias = excluded.calorias,
+       acucares = excluded.acucares,
+       sodio = excluded.sodio,
+       gorduras_saturadas = excluded.gorduras_saturadas,
+       status = excluded.status,
+       texto_bruto_ocr = excluded.texto_bruto_ocr,
+       criado_em = excluded.criado_em,
+       sincronizado = 1`,
+    [
+      analise.id,
+      analise.user_id,
+      analise.nome_produto,
+      analise.calorias,
+      analise.acucares,
+      analise.sodio,
+      analise.gorduras_saturadas,
+      analise.status,
+      analise.texto_bruto_ocr,
+      null,
+      analise.criado_em,
+    ]
+  );
 }
