@@ -1,154 +1,509 @@
-# NutriScan
+# 🥗 NutriScan
 
-Aplicativo mobile que fotografa a tabela nutricional de um produto, extrai os
-valores via OCR e classifica o produto como **Saudável**, **Moderado** ou
-**Evitar**, com histórico offline-first sincronizado no Supabase.
+Aplicativo mobile desenvolvido em **React Native + Expo** para análise de
+informações nutricionais de produtos alimentícios.
 
-Projeto acadêmico — disciplina de Visão Computacional.
+O usuário fotografa a tabela nutricional de um produto utilizando a câmera do
+celular. O aplicativo utiliza **OCR** para reconhecer o texto da imagem,
+interpreta os principais valores nutricionais e classifica o produto em:
+
+- 🟢 **Saudável**
+- 🟡 **Moderado**
+- 🔴 **Evitar**
+
+As análises são armazenadas localmente utilizando **Expo SQLite** e
+sincronizadas com **Supabase/PostgreSQL** quando existe conexão com a
+internet, permitindo que o histórico continue disponível mesmo em situações
+offline.
+
+> 📚 Projeto acadêmico desenvolvido para o curso de Engenharia de Software,
+> com foco em Visão Computacional, armazenamento local e computação
+> offline-first.
 
 ---
 
-## 1. Pré-requisitos
+# 📱 Demonstração
 
-- Node.js 18 ou superior instalado
-- Conta gratuita no [Expo](https://expo.dev) (opcional, mas recomendado)
-- App **Expo Go** instalado no celular (Android/iOS) para testar sem precisar
-  compilar nativamente
-- Conta no [Google Cloud](https://console.cloud.google.com) com a **Cloud
-  Vision API** ativada
-- Conta no [Supabase](https://supabase.com)
+O fluxo principal do aplicativo é:
 
----
+```text
+Login / Cadastro
+       ↓
+     Câmera
+       ↓
+ Fotografia do rótulo
+       ↓
+      OCR
+       ↓
+ Interpretação dos dados
+       ↓
+   Classificação
+       ↓
+     SQLite
+       ↓
+  ┌────┴────┐
+  │         │
+Offline   Online
+  │         │
+  │      Supabase
+  │         │
+  └────┬────┘
+       ↓
+    Histórico
 
-## 2. Instalação
+Funcionalidades
+🔐 Autenticação
+Cadastro de novos usuários
+Login com e-mail e senha
+Persistência da sessão
+Identificação individual dos usuários
+Dados separados por usuário
 
-```bash
-# 1. Instale as dependências
+A autenticação é realizada utilizando Supabase Auth.
+
+🔎 OCR
+
+O reconhecimento óptico de caracteres é realizado utilizando a
+OCR.space API.
+
+O OCR transforma a imagem da tabela nutricional em texto que posteriormente é
+processado pelo parser do aplicativo.
+
+Exemplo simplificado:
+
+INFORMAÇÃO NUTRICIONAL
+
+Valor energético 492 kcal
+Açúcares 3,3 g
+Gorduras saturadas 24 g
+Sódio 2050 mg
+
+O parser transforma essas informações em dados estruturados utilizados pelo
+sistema.
+
+🧮 Classificação nutricional
+
+Após a extração dos valores nutricionais, o aplicativo utiliza regras
+definidas em:
+
+src/services/classificationService.js
+
+para determinar a classificação do produto.
+
+Valores nutricionais
+        ↓
+Regras de classificação
+        ↓
+┌────────────┬────────────┬────────────┐
+│ Saudável   │  Moderado  │   Evitar   │
+└────────────┴────────────┴────────────┘
+
+Os critérios utilizados são simplificados e foram definidos para fins
+acadêmicos.
+
+⚠️ A classificação apresentada pelo NutriScan possui finalidade educacional
+e não substitui avaliação ou orientação de um profissional de nutrição.
+
+💾 Funcionamento Offline-First
+
+Uma das características principais do NutriScan é o funcionamento
+offline-first.
+
+As análises são inicialmente armazenadas no banco local do dispositivo através
+do Expo SQLite.
+
+Quando existe conexão com a internet, o aplicativo pode sincronizar os dados
+com o Supabase.
+
+Com internet
+Nova análise
+     ↓
+   SQLite
+     ↓
+ Supabase
+Sem internet
+Nova análise
+     ↓
+   SQLite
+     ↓
+Histórico disponível
+Internet restaurada
+Análises pendentes
+       ↓
+Sincronização
+       ↓
+    Supabase
+
+Isso permite que o histórico continue acessível mesmo quando o dispositivo
+estiver temporariamente sem conexão.
+
+☁️ Supabase
+
+O Supabase é utilizado como backend da aplicação.
+
+Funções utilizadas:
+
+Supabase Auth → autenticação
+PostgreSQL → banco de dados
+Row Level Security (RLS) → segurança dos dados
+API do Supabase → comunicação entre aplicativo e banco
+
+Cada análise possui um user_id associado ao usuário que realizou a análise.
+
+Isso permite que o histórico seja separado entre diferentes contas.
+
+🔐 Segurança dos dados
+
+A tabela de análises utiliza Row Level Security (RLS).
+
+As políticas configuradas restringem o acesso para que cada usuário possa
+consultar e manipular somente suas próprias análises.
+
+Conceitualmente:
+
+Usuário autenticado
+       ↓
+    auth.uid()
+       ↓
+     user_id
+       ↓
+Somente suas análises
+
+As credenciais utilizadas pelo aplicativo são configuradas através de
+variáveis de ambiente.
+
+⚠️ O arquivo .env não deve ser enviado ao GitHub.
+
+🗃️ Banco de dados local
+
+O banco local é criado utilizando Expo SQLite.
+
+Arquivo principal:
+
+src/database/db.js
+
+A tabela utilizada é:
+
+analises_nutricionais
+
+Principais campos:
+
+Campo	Descrição
+id	Identificador único
+user_id	Usuário responsável pela análise
+nome_produto	Nome identificado para o produto
+calorias	Valor energético
+acucares	Quantidade de açúcares
+sodio	Quantidade de sódio
+gorduras_saturadas	Quantidade de gorduras saturadas
+status	Classificação do produto
+texto_bruto_ocr	Texto retornado pelo OCR
+imagem_uri	Localização da imagem no dispositivo
+criado_em	Data e hora da análise
+sincronizado	Indica o estado de sincronização
+🧱 Arquitetura
+
+A aplicação está organizada em camadas:
+
+┌──────────────────────────────────────┐
+│              Interface               │
+│        React Native + Expo           │
+├──────────────────────────────────────┤
+│              Navegação               │
+│         React Navigation             │
+├──────────────────────────────────────┤
+│              Serviços                │
+│ OCR / Parser / Classificação / Sync  │
+├──────────────────────────────────────┤
+│          Banco local                 │
+│             SQLite                   │
+├──────────────────────────────────────┤
+│          Backend remoto              │
+│       Supabase / PostgreSQL          │
+└──────────────────────────────────────┘
+🛠️ Tecnologias utilizadas
+Tecnologia	Utilização
+React Native	Desenvolvimento do aplicativo mobile
+Expo	Ambiente de desenvolvimento
+Expo Camera	Captura das imagens
+Expo SQLite	Banco de dados local
+OCR.space	Reconhecimento óptico de caracteres
+Supabase Auth	Autenticação
+Supabase	Backend
+PostgreSQL	Banco de dados remoto
+React Navigation	Navegação
+NetInfo	Detecção da conexão de rede
+JavaScript	Linguagem principal
+📂 Estrutura do projeto
+nutriscan/
+│
+├── App.js
+├── app.config.js
+├── package.json
+├── package-lock.json
+├── .env.example
+├── .gitignore
+├── README.md
+│
+└── src/
+    │
+    ├── config/
+    │   ├── supabase.js
+    │   └── ocr.js
+    │
+    ├── database/
+    │   └── db.js
+    │
+    ├── navigation/
+    │   └── AppNavigator.js
+    │
+    ├── screens/
+    │   ├── CameraScreen.js
+    │   ├── HistoryScreen.js
+    │   ├── ResultScreen.js
+    │   ├── LoginScreen.js
+    │   └── SignupScreen.js
+    │
+    ├── services/
+    │   ├── ocrService.js
+    │   ├── parserService.js
+    │   ├── classificationService.js
+    │   └── syncService.js
+    │
+    └── utils/
+        └── uuid.js
+🔄 Pipeline de processamento
+
+O processo de análise pode ser dividido nas seguintes etapas:
+
+1. Aquisição da imagem
+
+Arquivo:
+
+src/screens/CameraScreen.js
+
+A câmera captura a tabela nutricional do produto.
+
+2. OCR
+
+Arquivo:
+
+src/services/ocrService.js
+
+A imagem é enviada para o OCR.space.
+
+3. Processamento do texto
+
+Arquivo:
+
+src/services/parserService.js
+
+O texto reconhecido é analisado procurando palavras-chave e valores
+numéricos relacionados aos nutrientes.
+
+4. Classificação
+
+Arquivo:
+
+src/services/classificationService.js
+
+Os valores encontrados são utilizados pelas regras de classificação.
+
+5. Armazenamento
+
+Arquivo:
+
+src/database/db.js
+
+A análise é salva no SQLite.
+
+6. Sincronização
+
+Arquivo:
+
+src/services/syncService.js
+
+Quando há conexão, os dados pendentes podem ser enviados ao Supabase.
+
+🎓 Objetivo acadêmico
+
+O projeto foi desenvolvido para demonstrar a aplicação prática de conceitos
+relacionados a:
+
+Visão Computacional;
+Reconhecimento Óptico de Caracteres;
+Desenvolvimento mobile;
+Bancos de dados;
+Persistência local;
+Computação offline-first;
+APIs;
+Autenticação;
+Segurança de dados;
+Sincronização entre armazenamento local e remoto.
+👨‍💻 Autor
+
+Lucas Ramos Silva
+
+Projeto desenvolvido para fins acadêmicos no curso de Engenharia de
+Software — Uni-FACEF.
+
+📋 Telas
+Login
+
+Permite que usuários existentes entrem na aplicação.
+
+Cadastro
+
+Permite criar uma nova conta utilizando e-mail e senha.
+
+Câmera
+
+Tela principal para captura da tabela nutricional.
+
+Resultado
+
+Exibe:
+
+Produto identificado;
+Classificação;
+Calorias;
+Açúcares;
+Sódio;
+Gorduras saturadas;
+Imagem capturada.
+Histórico
+
+Exibe as análises realizadas anteriormente.
+
+Também apresenta o estado da sincronização:
+
+Conectado
+
+ou:
+
+Offline — sincroniza quando houver conexão
+📥 Como baixar o projeto
+Opção 1 — Git
+
+É necessário ter o Git instalado.
+
+Clone o repositório:
+
+git clone https://github.com/SEU-USUARIO/nutriscan.git
+
+Entre na pasta:
+
+cd nutriscan
+
+⚙️ Requisitos
+
+Antes de executar o projeto, instale:
+
+Node.js 18 ou superior
+npm
+Git (caso utilize clone)
+Expo Go no celular
+
+Para verificar o Node.js:
+
+node --version
+
+Para verificar o npm:
+
+npm --version
+
+Para verificar o Git:
+
+git --version
+📦 Instalação
+
+Depois de baixar o projeto, execute:
+
 npm install
 
-# 2. Copie o arquivo de variáveis de ambiente e preencha com suas chaves
-cp .env.example .env
-```
+Esse comando instala todas as dependências presentes no
+package.json.
 
-Abra o arquivo `.env` e preencha:
+🔑 Configuração das variáveis de ambiente
 
-```
-GOOGLE_CLOUD_VISION_API_KEY=sua_chave_aqui
+Na raiz do projeto existe um arquivo:
+
+.env.example
+
+Crie uma cópia chamada:
+
+.env
+
+O arquivo deve conter:
+
+OCR_SPACE_API_KEY=sua_chave_aqui
 SUPABASE_URL=https://seu-projeto.supabase.co
-SUPABASE_ANON_KEY=sua_chave_anon_aqui
-```
+SUPABASE_ANON_KEY=sua_chave_aqui
+Importante
 
-### Como obter a chave do Google Cloud Vision
+O arquivo:
 
-1. Acesse https://console.cloud.google.com
-2. Crie um novo projeto (ou use um existente)
-3. Vá em **APIs e Serviços > Biblioteca**, procure por "Cloud Vision API" e
-   clique em **Ativar**
-4. Vá em **APIs e Serviços > Credenciais > Criar credenciais > Chave de API**
-5. Copie a chave gerada para o `.env`
+.env
 
-> ⚠️ O tier gratuito do Google Cloud Vision cobre 1.000 unidades de OCR por
-> mês. Verifique o consumo em **APIs e Serviços > Painel** durante os testes
-> para não ser pego de surpresa perto da apresentação.
+está incluído no .gitignore e não deve ser enviado para o GitHub.
 
-### Como obter as credenciais do Supabase
+🔎 Obtendo a chave do OCR.space
+Acesse o site do OCR.space;
+Crie uma conta;
+Gere uma API Key;
+Copie a chave;
+Coloque no arquivo .env:
 
-1. Acesse https://supabase.com e crie um novo projeto
-2. Vá em **Project Settings > API**
-3. Copie a **Project URL** (`SUPABASE_URL`) e a chave **anon public**
-   (`SUPABASE_ANON_KEY`)
-4. Vá em **SQL Editor**, abra uma nova query, cole o conteúdo do arquivo
-   `supabase/schema.sql` deste projeto e clique em **Run**
+☁️ Configurando o Supabase
+Crie uma conta no Supabase;
+Crie um novo projeto;
+Acesse as configurações da API;
+Copie a Project URL;
+Copie a chave anon public;
+Coloque os valores no .env.
 
----
+▶️ Como executar
 
-## 3. Executando o projeto
+Depois da instalação e configuração:
 
-```bash
 npx expo start
-```
 
-Escaneie o QR code exibido no terminal com o app **Expo Go** (Android) ou
-com a câmera do iPhone (iOS). O app deve abrir direto na tela de câmera.
+O Expo exibirá um QR Code no terminal.
 
----
+Android
+Instale o Expo Go;
+Conecte o celular à mesma rede do computador;
+Abra o Expo Go;
+Escaneie o QR Code.
+iOS
+Instale o Expo Go;
+Abra o aplicativo;
+Escaneie o QR Code utilizando a câmera do dispositivo.
+📱 Executando em desenvolvimento
 
-## 4. Estrutura do projeto
+Também é possível utilizar:
 
-```
-nutriscan/
-├── App.js                        # Ponto de entrada: inicializa banco e sync
-├── app.config.js                 # Configuração do Expo + variáveis de ambiente
-├── .env.example                  # Modelo do arquivo de variáveis de ambiente
-├── src/
-│   ├── config/
-│   │   ├── supabase.js           # Cliente do Supabase
-│   │   └── ocr.js                # Configuração da API do Google Cloud Vision
-│   ├── database/
-│   │   └── db.js                 # Camada de acesso ao Expo SQLite
-│   ├── services/
-│   │   ├── ocrService.js         # Envia imagem para a API de OCR
-│   │   ├── parserService.js      # Extrai valores nutricionais do texto bruto
-│   │   ├── classificationService.js  # Regras de classificação do produto
-│   │   └── syncService.js        # Sincronização offline-first com Supabase
-│   ├── screens/
-│   │   ├── CameraScreen.js       # Tela de captura da foto
-│   │   ├── ResultScreen.js       # Tela de resultado da análise
-│   │   └── HistoryScreen.js      # Tela de histórico
-│   ├── navigation/
-│   │   └── AppNavigator.js       # Configuração de rotas
-│   └── utils/
-│       └── uuid.js               # Geração de IDs únicos
-└── supabase/
-    └── schema.sql                # Script de criação das tabelas no Supabase
-```
+npx expo start --android
 
----
+ou:
 
-## 5. Pipeline de Visão Computacional (onde está cada etapa no código)
+npx expo start --ios
 
-| Etapa                          | Arquivo                                    |
-|---------------------------------|---------------------------------------------|
-| 1. Aquisição de Imagem          | `src/screens/CameraScreen.js`               |
-| 2. Pré-processamento            | feito pela própria API de OCR               |
-| 3. Segmentação                  | `src/services/ocrService.js`                |
-| 4. Extração de Características  | `src/services/parserService.js`             |
-| 5. Reconhecimento de Padrões    | `src/services/classificationService.js`     |
+🔒 Privacidade e credenciais
 
----
+Nunca coloque diretamente no código:
 
-## 6. Ajustando o parser (importante!)
+API Keys
+Senhas
+Tokens privados
+Credenciais do Supabase
 
-O texto que volta da API de OCR não vem estruturado em campos — vem como um
-bloco de texto corrido, e o layout varia entre marcas de produtos. O arquivo
-`src/services/parserService.js` usa busca por palavras-chave (ex: "sodio",
-"acucares totais") seguida da captura do número mais próximo.
+Utilize o arquivo:
 
-**Antes da apresentação, testem com pelo menos 10-15 produtos reais** e
-ajustem a lista de `keywords` em `parseNutritionalInfo()` conforme os padrões
-de texto que aparecerem nos testes de vocês. É normal precisar adicionar
-variações (ex: "sodio total", "sodio (na)") conforme os produtos testados.
+.env
 
----
+O repositório contém apenas:
 
-## 7. Ajustando as regras de classificação
+.env.example
 
-Os limites de classificação (o que é "saudável", "moderado" ou "evitar")
-estão em `src/services/classificationService.js`, no objeto `LIMITES`. Eles
-são baseados em referências simplificadas de perfil nutricional
-(OMS/ANVISA) — documentem a fonte bibliográfica escolhida no relatório do
-projeto, e ajustem os valores se o grupo optar por outra referência.
-
----
-
-## 8. Checklist antes da apresentação
-
-- [ ] Testar o app com pelo menos 15 produtos reais diferentes
-- [ ] Confirmar que a cota gratuita da API do Google Cloud Vision não vai
-      estourar durante a demo
-- [ ] Testar a conexão via dados móveis (não só wi-fi), já que a API de OCR
-      e o Supabase exigem internet
-- [ ] Levar 3-4 produtos físicos variados no dia (um claramente saudável, um
-      claramente "evitar", um limítrofe) para demonstrar ao vivo
-- [ ] Verificar que o histórico mostra corretamente itens sincronizados e
-      não sincronizados (para demonstrar a arquitetura offline-first)
+com os nomes das variáveis necessárias.
