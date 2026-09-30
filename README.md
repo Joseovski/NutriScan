@@ -295,3 +295,9 @@ Utilizar os produtos já cadastrados para montar uma lista de compras mensal.
 
 Possibilidade de compartilhar listas de produtos com uma nutricionista para facilitar o acompanhamento e a orientação profissional.
 
+## 👨‍💻 Desenvolvedores
+
+- **José Dos Santos** — Engenharia de Software | Uni-FACEF
+- **Lucas Ramos Silva** — Engenharia de Software | Uni-FACEF
+
+O projeto foi desenvolvido como parte da formação acadêmica dos integrantes, aplicando conhecimentos de desenvolvimento de software, desenvolvimento mobile, bancos de dados, APIs e arquitetura de aplicações.
