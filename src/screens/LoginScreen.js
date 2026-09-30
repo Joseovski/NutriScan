@@ -5,25 +5,34 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   ActivityIndicator,
+  Keyboard,
 } from "react-native";
-
 import { SafeAreaView } from "react-native-safe-area-context";
-
 import { supabase } from "../config/supabase";
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState("");
 
-  async function entrar() {
-    if (!email.trim() || !senha) {
-      Alert.alert(
-        "Campos obrigatórios",
-        "Digite seu e-mail e sua senha."
-      );
+  async function fazerLogin() {
+    Keyboard.dismiss();
+    setErro("");
+
+    const emailLimpo = email.trim();
+
+    if (!emailLimpo) {
+      setErro("Digite seu e-mail.");
+      return;
+    }
+
+    if (!senha) {
+      setErro("Digite sua senha.");
       return;
     }
 
@@ -31,23 +40,36 @@ export default function LoginScreen({ navigation }) {
       setCarregando(true);
 
       const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+        email: emailLimpo,
         password: senha,
       });
 
       if (error) {
-        Alert.alert("Não foi possível entrar", error.message);
-        return;
+        throw error;
       }
 
-      navigation.replace("Camera");
+      // O AppNavigator detecta automaticamente a sessão
+      // e direciona para a tela principal.
     } catch (error) {
-      console.error("[Login] Erro:", error);
+      console.warn("[LoginScreen] Erro ao fazer login:", error);
 
-      Alert.alert(
-        "Erro",
-        "Ocorreu um erro ao tentar entrar. Verifique sua conexão."
-      );
+      let mensagem = "Não foi possível fazer login.";
+
+      if (error?.message) {
+        if (
+          error.message.toLowerCase().includes("invalid login credentials")
+        ) {
+          mensagem = "E-mail ou senha incorretos.";
+        } else if (
+          error.message.toLowerCase().includes("email not confirmed")
+        ) {
+          mensagem = "Confirme seu e-mail antes de entrar.";
+        } else {
+          mensagem = error.message;
+        }
+      }
+
+      setErro(mensagem);
     } finally {
       setCarregando(false);
     }
@@ -55,52 +77,93 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>NutriScan</Text>
-
-        <Text style={styles.subtitle}>
-          Entre na sua conta para acessar suas análises.
-        </Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="E-mail"
-          placeholderTextColor="#888"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Senha"
-          placeholderTextColor="#888"
-          value={senha}
-          onChangeText={setSenha}
-          secureTextEntry
-          autoCapitalize="none"
-        />
-
-        <TouchableOpacity
-          style={[styles.button, carregando && styles.buttonDisabled]}
-          onPress={entrar}
-          disabled={carregando}
+      <KeyboardAvoidingView
+        style={styles.keyboardContainer}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={
+            Platform.OS === "ios" ? "interactive" : "on-drag"
+          }
+          showsVerticalScrollIndicator={false}
         >
-          {carregando ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Entrar</Text>
-          )}
-        </TouchableOpacity>
+          <View style={styles.conteudo}>
+            <View style={styles.cabecalho}>
+              <Text style={styles.titulo}>NutriScan</Text>
 
-        <TouchableOpacity onPress={() => navigation.navigate("Cadastro")}>
-            <Text style={styles.signupText}>
-              Ainda não tenho uma conta
-            </Text>
-        </TouchableOpacity>
-      </View>
+              <Text style={styles.subtitulo}>
+                Analise seus produtos de forma rápida e prática.
+              </Text>
+            </View>
+
+            <View style={styles.formulario}>
+              <Text style={styles.label}>E-mail</Text>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Digite seu e-mail"
+                placeholderTextColor="#888"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="emailAddress"
+                editable={!carregando}
+                returnKeyType="next"
+              />
+
+              <Text style={styles.label}>Senha</Text>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Digite sua senha"
+                placeholderTextColor="#888"
+                value={senha}
+                onChangeText={setSenha}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="password"
+                editable={!carregando}
+                returnKeyType="done"
+                onSubmitEditing={fazerLogin}
+              />
+
+              {erro ? <Text style={styles.erro}>{erro}</Text> : null}
+
+              <TouchableOpacity
+                style={[
+                  styles.botaoPrincipal,
+                  carregando && styles.botaoDesabilitado,
+                ]}
+                onPress={fazerLogin}
+                disabled={carregando}
+                activeOpacity={0.8}
+              >
+                {carregando ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.botaoPrincipalTexto}>Entrar</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.botaoSecundario}
+                onPress={() => navigation.navigate("Cadastro")}
+                disabled={carregando}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.botaoSecundarioTexto}>
+                  Criar uma conta
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -108,66 +171,110 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F7FA",
+    backgroundColor: "#FFFFFF",
   },
 
-  content: {
+  keyboardContainer: {
     flex: 1,
+  },
+
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: "center",
-    paddingHorizontal: 30,
+    paddingHorizontal: 24,
+    paddingVertical: 30,
   },
 
-  title: {
-    fontSize: 36,
-    fontWeight: "800",
-    color: "#1F3864",
-    textAlign: "center",
-    marginBottom: 10,
+  conteudo: {
+    width: "100%",
+    maxWidth: 500,
+    alignSelf: "center",
   },
 
-  subtitle: {
-    fontSize: 16,
-    color: "#555",
-    textAlign: "center",
+  cabecalho: {
+    alignItems: "center",
     marginBottom: 35,
   },
 
+  titulo: {
+    fontSize: 34,
+    fontWeight: "700",
+    color: "#1F3864",
+    marginBottom: 10,
+  },
+
+  subtitulo: {
+    fontSize: 15,
+    color: "#666",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+
+  formulario: {
+    width: "100%",
+  },
+
+  label: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 7,
+  },
+
   input: {
-    backgroundColor: "#fff",
+    width: "100%",
+    height: 52,
     borderWidth: 1,
-    borderColor: "#D5D9DE",
+    borderColor: "#D0D0D0",
     borderRadius: 10,
     paddingHorizontal: 15,
-    paddingVertical: 13,
     fontSize: 16,
+    color: "#222",
+    backgroundColor: "#FAFAFA",
+    marginBottom: 18,
+  },
+
+  erro: {
+    color: "#C62828",
+    fontSize: 14,
+    lineHeight: 20,
     marginBottom: 15,
   },
 
-  button: {
+  botaoPrincipal: {
+    width: "100%",
+    minHeight: 52,
     backgroundColor: "#1F3864",
     borderRadius: 10,
-    paddingVertical: 14,
     alignItems: "center",
-    marginTop: 5,
-    marginBottom: 20,
-    minHeight: 52,
     justifyContent: "center",
+    marginTop: 4,
   },
 
-  buttonDisabled: {
+  botaoDesabilitado: {
     opacity: 0.7,
   },
 
-  buttonText: {
-    color: "#fff",
-    fontSize: 17,
+  botaoPrincipalTexto: {
+    color: "#FFFFFF",
+    fontSize: 16,
     fontWeight: "700",
   },
 
-  signupText: {
+  botaoSecundario: {
+    width: "100%",
+    minHeight: 52,
+    borderWidth: 1,
+    borderColor: "#1F3864",
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+
+  botaoSecundarioTexto: {
     color: "#1F3864",
-    textAlign: "center",
-    fontSize: 15,
-    fontWeight: "600",
+    fontSize: 16,
+    fontWeight: "700",
   },
 });

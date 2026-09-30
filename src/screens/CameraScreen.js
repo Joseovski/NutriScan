@@ -1,4 +1,9 @@
-import React, { useRef, useState } from "react";
+import React, { useState } from "react";
+
+import { buscarProduto } from "../services/produtoService";
+
+import { useIsFocused } from "@react-navigation/native";
+
 import {
   View,
   Text,
@@ -6,189 +11,250 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
+
 import { CameraView, useCameraPermissions } from "expo-camera";
+
 import { SafeAreaView } from "react-native-safe-area-context";
-import { extractTextFromImage } from "../services/ocrService";
-import { parseNutritionalInfo, guessProductName } from "../services/parserService";
-import { classifyProduct } from "../services/classificationService";
-import { inserirAnalise } from "../database/db";
-import { sincronizarPendentes } from "../services/syncService";
-import { gerarUUID } from "../utils/uuid";
-import { supabase } from "../config/supabase";
+
+import { processBarcode } from "../services/barcodeService";
 
 export default function CameraScreen({ navigation }) {
   const [permission, requestPermission] = useCameraPermissions();
+
   const [processando, setProcessando] = useState(false);
   const [mensagemStatus, setMensagemStatus] = useState("");
   const [cameraPronta, setCameraPronta] = useState(false);
-  const cameraRef = useRef(null);
 
+  const isFocused = useIsFocused();
 
-  // Enquanto a permissão de câmera ainda está sendo verificada.
+  // Enquanto verifica a permissão
   if (!permission) {
     return <View style={styles.container} />;
   }
 
-  // Usuário ainda não concedeu (ou negou) a permissão de câmera.
+  // Caso ainda não tenha permissão
   if (!permission.granted) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.permissionBox}>
           <Text style={styles.permissionText}>
-            Precisamos da sua permissão para usar a câmera e ler as tabelas
-            nutricionais.
+            Precisamos da sua permissão para usar a câmera e ler o código de
+            barras dos produtos.
           </Text>
-          <TouchableOpacity style={styles.button} onPress={requestPermission}>
-            <Text style={styles.buttonText}>Permitir acesso à câmera</Text>
+
+          <TouchableOpacity
+            style={styles.button}
+            onPress={requestPermission}
+          >
+            <Text style={styles.buttonText}>
+              Permitir acesso à câmera
+            </Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  async function capturarEAnalisar() {
-    if (!cameraRef.current || processando) return;
+  async function analisarCodigoDeBarras(barcode) {
+    if (processando) return;
 
     try {
       setProcessando(true);
-      setMensagemStatus("Capturando foto...");
+      setMensagemStatus("Lendo código de barras...");
 
-      const foto = await cameraRef.current.takePictureAsync({
-        quality: 0.7,
-        base64: false,
+      console.log("[Barcode] Evento recebido:", barcode);
+
+      // Processa o código detectado pela câmera
+      const resultadoBarcode = processBarcode(barcode);
+
+      const codigoBarras = resultadoBarcode.codigo;
+      const tipoCodigo = resultadoBarcode.tipo;
+
+      console.log("[Barcode] Código:", codigoBarras);
+      console.log("[Barcode] Tipo:", tipoCodigo);
+
+      setMensagemStatus("Consultando produto...");
+
+      // =====================================================
+      // SQLite → Supabase → Open Food Facts
+      // =====================================================
+
+      const resultadoProduto = await buscarProduto(codigoBarras);
+
+      console.log(
+        "[CameraScreen] Resultado da busca:",
+        resultadoProduto
+      );
+
+      // =====================================================
+      // PRODUTO ENCONTRADO
+      // =====================================================
+
+      if (resultadoProduto.encontrado) {
+        console.log("[CameraScreen] Produto encontrado!");
+
+        console.log(
+          "[CameraScreen] Origem:",
+          resultadoProduto.origem
+        );
+
+        setMensagemStatus("Produto encontrado!");
+
+        // Pequeno atraso para mostrar a mensagem
+        await new Promise((resolve) =>
+          setTimeout(resolve, 500)
+        );
+
+        navigation.navigate("Resultado", {
+          codigoBarras,
+          tipoCodigo,
+          produto: resultadoProduto.produto,
+          origem: resultadoProduto.origem,
+        });
+
+        return;
+      }
+
+      // =====================================================
+      // PRODUTO NÃO ENCONTRADO
+      // =====================================================
+
+      console.log(
+        "[CameraScreen] Produto não encontrado."
+      );
+
+      setMensagemStatus(
+        "Produto não encontrado. Cadastre manualmente."
+      );
+
+      await new Promise((resolve) =>
+        setTimeout(resolve, 500)
+      );
+
+      navigation.navigate("CadastroProduto", {
+        codigoBarras,
+        tipoCodigo,
       });
-
-      setMensagemStatus("Lendo o texto do rótulo (OCR)...");
-      const textoBruto = await extractTextFromImage(foto.uri);
-
-      if (!textoBruto) {
-        setMensagemStatus("");
-        setProcessando(false);
-        navigation.navigate("Resultado", {
-          erro:
-            "Não conseguimos identificar texto na imagem. Tente aproximar mais da tabela nutricional e evitar reflexos.",
-        });
-        return;
-      }
-
-      setMensagemStatus("Extraindo valores nutricionais...");
-      const valores = parseNutritionalInfo(textoBruto);
-      const nomeProduto = guessProductName(textoBruto);
-
-      setMensagemStatus("Classificando produto...");
-      const status = classifyProduct(valores);
-
-      if (!status) {
-        setMensagemStatus("");
-        setProcessando(false);
-        navigation.navigate("Resultado", {
-          erro:
-            "Não conseguimos identificar valores nutricionais suficientes nesta imagem. Tente novamente com uma foto mais nítida da tabela.",
-          textoBruto,
-        });
-        return;
-      }
-
-      const {
-  data: { user },
-  error: userError,
-} = await supabase.auth.getUser();
-
-if (userError || !user) {
-  throw new Error("Não foi possível identificar o usuário logado.");
-}
-
-const analise = {
-  id: gerarUUID(),
-  userId: user.id,
-  nomeProduto,
-  calorias: valores.calorias,
-  acucares: valores.acucares,
-  sodio: valores.sodio,
-  gordurasSaturadas: valores.gordurasSaturadas,
-  status,
-  textoBrutoOcr: textoBruto,
-  imagemUri: foto.uri,
-  criadoEm: new Date().toISOString(),
-};
-
-      setMensagemStatus("Salvando análise...");
-      await inserirAnalise(analise);
-
-      // Tenta sincronizar em segundo plano; não bloqueia a navegação
-      // caso não haja internet no momento (arquitetura offline-first).
-      sincronizarPendentes().catch(() => {});
-
-      setProcessando(false);
-      setMensagemStatus("");
-      navigation.navigate("Resultado", { analise });
     } catch (err) {
-      console.warn("[CameraScreen] Erro ao processar imagem:", err);
+      console.warn(
+        "[CameraScreen] Erro ao processar código:",
+        err
+      );
+
+      navigation.navigate("Resultado", {
+        erro:
+          "Ocorreu um erro ao consultar o produto: " +
+          err.message,
+      });
+    } finally {
       setProcessando(false);
       setMensagemStatus("");
-      navigation.navigate("Resultado", {
-        erro: `Ocorreu um erro ao processar a imagem: ${err.message}`,
-      });
     }
   }
 
+  function voltar() {
+    if (processando) return;
+
+    navigation.goBack();
+  }
+
   return (
-  <View style={styles.container}>
-    <CameraView
-  ref={cameraRef}
-  style={styles.camera}
-  facing="back"
+    <View style={styles.container}>
+      {isFocused && (
+        <CameraView
+          style={styles.camera}
+          facing="back"
+          onCameraReady={() => setCameraPronta(true)}
+          onBarcodeScanned={
+            processando ? undefined : analisarCodigoDeBarras
+          }
+          barcodeScannerSettings={{
+            barcodeTypes: [
+              "ean13",
+              "ean8",
+              "upc_a",
+              "upc_e",
+              "code128",
+              "code39",
+              "code93",
+              "itf14",
+            ],
+          }}
+        />
+      )}
 
-  onCameraReady={() => {
-    console.log("[Camera] Preview pronta");
-    setCameraPronta(true);
-  }}
-  onMountError={(error) => {
-    console.error("[Camera] Erro ao iniciar:", error);
-    setCameraPronta(false);
-  }}
-/>
-
-    <SafeAreaView style={styles.overlay}>
-      <View style={styles.topBar}>
-        <Text style={styles.instructions}>
-          Aponte a câmera para a tabela nutricional
-        </Text>
-      </View>
-
-
-      <View style={styles.bottomBar}>
-        {processando ? (
-          <View style={styles.processandoBox}>
-            <ActivityIndicator color="#fff" size="large" />
-
-            <Text style={styles.processandoText}>
-              {mensagemStatus}
-            </Text>
-          </View>
-        ) : (
+      <SafeAreaView
+        style={styles.overlay}
+        edges={["top", "bottom"]}
+      >
+        {/* Parte superior */}
+        <View style={styles.topBar}>
           <TouchableOpacity
-            style={styles.captureButton}
-            onPress={capturarEAnalisar}
+            style={styles.backButton}
+            onPress={voltar}
+            disabled={processando}
           >
-            <View style={styles.captureButtonInner} />
+            <Text style={styles.backButtonText}>
+              ← Voltar
+            </Text>
           </TouchableOpacity>
-        )}
 
-        <TouchableOpacity
-          style={styles.historyLink}
-          onPress={() => navigation.navigate("Historico")}
-          disabled={processando}
-        >
-          <Text style={styles.historyLinkText}>
-            Ver histórico
+          <Text style={styles.instructions}>
+            Aponte a câmera para o código de barras
           </Text>
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
-  </View>
-);
-} 
+        </View>
+
+        {/* Área de leitura */}
+        <View style={styles.scannerArea}>
+          <View style={styles.scannerBox}>
+            <View style={[styles.corner, styles.topLeft]} />
+            <View style={[styles.corner, styles.topRight]} />
+            <View style={[styles.corner, styles.bottomLeft]} />
+            <View style={[styles.corner, styles.bottomRight]} />
+          </View>
+
+          <Text style={styles.scannerText}>
+            Posicione o código dentro da área
+          </Text>
+        </View>
+
+        {/* Parte inferior */}
+        <View style={styles.bottomBar}>
+          {processando ? (
+            <View style={styles.processandoBox}>
+              <ActivityIndicator
+                color="#fff"
+                size="large"
+              />
+
+              <Text style={styles.processandoText}>
+                {mensagemStatus}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.readyBox}>
+              <Text style={styles.readyText}>
+                Pronto para escanear
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={styles.historyLink}
+            onPress={() =>
+              navigation.navigate("Historico")
+            }
+            disabled={processando}
+          >
+            <Text style={styles.historyLinkText}>
+              Ver histórico
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -207,8 +273,24 @@ const styles = StyleSheet.create({
   },
 
   topBar: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 10,
     alignItems: "center",
+  },
+
+  backButton: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(0,0,0,0.65)",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginBottom: 12,
+  },
+
+  backButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
 
   instructions: {
@@ -222,29 +304,66 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
 
-  
+  scannerArea: {
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+  },
+
+  scannerBox: {
+    width: 280,
+    height: 150,
+    position: "relative",
+  },
+
+  corner: {
+    position: "absolute",
+    width: 35,
+    height: 35,
+    borderColor: "#fff",
+  },
+
+  topLeft: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 4,
+    borderLeftWidth: 4,
+  },
+
+  topRight: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 4,
+    borderRightWidth: 4,
+  },
+
+  bottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 4,
+    borderLeftWidth: 4,
+  },
+
+  bottomRight: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: 4,
+    borderRightWidth: 4,
+  },
+
+  scannerText: {
+    color: "#fff",
+    marginTop: 20,
+    fontSize: 14,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
 
   bottomBar: {
     alignItems: "center",
-    paddingBottom: 30,
-  },
-
-  captureButton: {
-    width: 78,
-    height: 78,
-    borderRadius: 39,
-    borderWidth: 4,
-    borderColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 16,
-  },
-
-  captureButtonInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#fff",
+    paddingBottom: 10,
   },
 
   processandoBox: {
@@ -256,6 +375,19 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginTop: 10,
     fontSize: 14,
+  },
+
+  readyBox: {
+    marginBottom: 16,
+  },
+
+  readyText: {
+    color: "#fff",
+    fontSize: 14,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
   },
 
   historyLink: {

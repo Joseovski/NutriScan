@@ -5,42 +5,56 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
   ActivityIndicator,
+  Keyboard,
 } from "react-native";
-
 import { SafeAreaView } from "react-native-safe-area-context";
-
 import { supabase } from "../config/supabase";
 
 export default function SignupScreen({ navigation }) {
+  const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
-  const [carregando, setCarregando] = useState(false);
 
-  async function cadastrar() {
-    if (!email.trim() || !senha || !confirmarSenha) {
-      Alert.alert(
-        "Campos obrigatórios",
-        "Preencha todos os campos."
-      );
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState("");
+
+  async function criarConta() {
+    Keyboard.dismiss();
+
+    setErro("");
+    setSucesso("");
+
+    const nomeLimpo = nome.trim();
+    const emailLimpo = email.trim();
+
+    if (!nomeLimpo) {
+      setErro("Digite seu nome.");
       return;
     }
 
-    if (senha !== confirmarSenha) {
-      Alert.alert(
-        "Senhas diferentes",
-        "A senha e a confirmação precisam ser iguais."
-      );
+    if (!emailLimpo) {
+      setErro("Digite seu e-mail.");
+      return;
+    }
+
+    if (!senha) {
+      setErro("Digite uma senha.");
       return;
     }
 
     if (senha.length < 6) {
-      Alert.alert(
-        "Senha inválida",
-        "A senha precisa ter pelo menos 6 caracteres."
-      );
+      setErro("A senha deve possuir pelo menos 6 caracteres.");
+      return;
+    }
+
+    if (senha !== confirmarSenha) {
+      setErro("As senhas não são iguais.");
       return;
     }
 
@@ -48,37 +62,48 @@ export default function SignupScreen({ navigation }) {
       setCarregando(true);
 
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim(),
+        email: emailLimpo,
         password: senha,
+        options: {
+          data: {
+            nome: nomeLimpo,
+          },
+        },
       });
 
       if (error) {
-        Alert.alert("Não foi possível criar a conta", error.message);
+        throw error;
+      }
+
+      if (data?.session) {
+        // Se o projeto Supabase estiver configurado
+        // para não exigir confirmação de e-mail,
+        // a sessão já será criada e o AppNavigator
+        // fará o redirecionamento.
         return;
       }
 
-      if (data.session) {
-        navigation.replace("Camera");
-        return;
-      }
-
-      Alert.alert(
-        "Conta criada!",
-        "Sua conta foi criada. Verifique seu e-mail para confirmar o cadastro.",
-        [
-          {
-            text: "OK",
-            onPress: () => navigation.replace("Login"),
-          },
-        ]
+      setSucesso(
+        "Conta criada com sucesso. Verifique seu e-mail para confirmar o cadastro."
       );
     } catch (error) {
-      console.error("[Cadastro] Erro:", error);
+      console.warn("[SignupScreen] Erro ao criar conta:", error);
 
-      Alert.alert(
-        "Erro",
-        "Ocorreu um erro ao criar sua conta. Verifique sua conexão."
-      );
+      let mensagem = "Não foi possível criar a conta.";
+
+      if (error?.message) {
+        if (error.message.toLowerCase().includes("already registered")) {
+          mensagem = "Este e-mail já está cadastrado.";
+        } else if (
+          error.message.toLowerCase().includes("password should be at least")
+        ) {
+          mensagem = "A senha precisa ter pelo menos 6 caracteres.";
+        } else {
+          mensagem = error.message;
+        }
+      }
+
+      setErro(mensagem);
     } finally {
       setCarregando(false);
     }
@@ -86,62 +111,130 @@ export default function SignupScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>Criar conta</Text>
-
-        <Text style={styles.subtitle}>
-          Crie sua conta para salvar e acessar suas análises.
-        </Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="E-mail"
-          placeholderTextColor="#888"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Senha"
-          placeholderTextColor="#888"
-          value={senha}
-          onChangeText={setSenha}
-          secureTextEntry
-          autoCapitalize="none"
-        />
-
-        <TextInput
-          style={styles.input}
-          placeholder="Confirmar senha"
-          placeholderTextColor="#888"
-          value={confirmarSenha}
-          onChangeText={setConfirmarSenha}
-          secureTextEntry
-          autoCapitalize="none"
-        />
-
-        <TouchableOpacity
-          style={[styles.button, carregando && styles.buttonDisabled]}
-          onPress={cadastrar}
-          disabled={carregando}
+      <KeyboardAvoidingView
+        style={styles.keyboardContainer}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={
+            Platform.OS === "ios" ? "interactive" : "on-drag"
+          }
+          showsVerticalScrollIndicator={false}
         >
-          {carregando ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>Criar conta</Text>
-          )}
-        </TouchableOpacity>
+          <View style={styles.conteudo}>
+            <View style={styles.cabecalho}>
+              <Text style={styles.titulo}>Criar conta</Text>
 
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.loginText}>
-            Já tenho uma conta
-          </Text>
-        </TouchableOpacity>
-      </View>
+              <Text style={styles.subtitulo}>
+                Cadastre-se para começar a usar o NutriScan.
+              </Text>
+            </View>
+
+            <View style={styles.formulario}>
+              <Text style={styles.label}>Nome</Text>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Digite seu nome"
+                placeholderTextColor="#888"
+                value={nome}
+                onChangeText={setNome}
+                autoCapitalize="words"
+                autoCorrect={false}
+                textContentType="name"
+                editable={!carregando}
+                returnKeyType="next"
+              />
+
+              <Text style={styles.label}>E-mail</Text>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Digite seu e-mail"
+                placeholderTextColor="#888"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="emailAddress"
+                editable={!carregando}
+                returnKeyType="next"
+              />
+
+              <Text style={styles.label}>Senha</Text>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Digite sua senha"
+                placeholderTextColor="#888"
+                value={senha}
+                onChangeText={setSenha}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="newPassword"
+                editable={!carregando}
+                returnKeyType="next"
+              />
+
+              <Text style={styles.label}>Confirmar senha</Text>
+
+              <TextInput
+                style={styles.input}
+                placeholder="Digite a senha novamente"
+                placeholderTextColor="#888"
+                value={confirmarSenha}
+                onChangeText={setConfirmarSenha}
+                secureTextEntry
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="newPassword"
+                editable={!carregando}
+                returnKeyType="done"
+                onSubmitEditing={criarConta}
+              />
+
+              {erro ? <Text style={styles.erro}>{erro}</Text> : null}
+
+              {sucesso ? (
+                <Text style={styles.sucesso}>{sucesso}</Text>
+              ) : null}
+
+              <TouchableOpacity
+                style={[
+                  styles.botaoPrincipal,
+                  carregando && styles.botaoDesabilitado,
+                ]}
+                onPress={criarConta}
+                disabled={carregando}
+                activeOpacity={0.8}
+              >
+                {carregando ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.botaoPrincipalTexto}>
+                    Criar conta
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.botaoVoltar}
+                onPress={() => navigation.goBack()}
+                disabled={carregando}
+                activeOpacity={0.8}
+              >
+                <Text style={styles.botaoVoltarTexto}>
+                  Voltar para o login
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -149,66 +242,116 @@ export default function SignupScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F5F7FA",
+    backgroundColor: "#FFFFFF",
   },
 
-  content: {
+  keyboardContainer: {
     flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 30,
   },
 
-  title: {
-    fontSize: 34,
-    fontWeight: "800",
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingVertical: 30,
+  },
+
+  conteudo: {
+    width: "100%",
+    maxWidth: 500,
+    alignSelf: "center",
+  },
+
+  cabecalho: {
+    alignItems: "center",
+    marginBottom: 30,
+  },
+
+  titulo: {
+    fontSize: 30,
+    fontWeight: "700",
     color: "#1F3864",
-    textAlign: "center",
     marginBottom: 10,
   },
 
-  subtitle: {
-    fontSize: 16,
-    color: "#555",
+  subtitulo: {
+    fontSize: 15,
+    color: "#666",
     textAlign: "center",
-    marginBottom: 35,
+    lineHeight: 22,
+  },
+
+  formulario: {
+    width: "100%",
+  },
+
+  label: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 7,
   },
 
   input: {
-    backgroundColor: "#fff",
+    width: "100%",
+    height: 52,
     borderWidth: 1,
-    borderColor: "#D5D9DE",
+    borderColor: "#D0D0D0",
     borderRadius: 10,
     paddingHorizontal: 15,
-    paddingVertical: 13,
     fontSize: 16,
+    color: "#222",
+    backgroundColor: "#FAFAFA",
+    marginBottom: 17,
+  },
+
+  erro: {
+    color: "#C62828",
+    fontSize: 14,
+    lineHeight: 20,
     marginBottom: 15,
   },
 
-  button: {
-    backgroundColor: "#1F3864",
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginTop: 5,
-    marginBottom: 20,
-    minHeight: 52,
-    justifyContent: "center",
+  sucesso: {
+    color: "#2E7D32",
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 15,
   },
 
-  buttonDisabled: {
+  botaoPrincipal: {
+    width: "100%",
+    minHeight: 52,
+    backgroundColor: "#1F3864",
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 3,
+  },
+
+  botaoDesabilitado: {
     opacity: 0.7,
   },
 
-  buttonText: {
-    color: "#fff",
-    fontSize: 17,
+  botaoPrincipalTexto: {
+    color: "#FFFFFF",
+    fontSize: 16,
     fontWeight: "700",
   },
 
-  loginText: {
+  botaoVoltar: {
+    width: "100%",
+    minHeight: 52,
+    borderWidth: 1,
+    borderColor: "#1F3864",
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+
+  botaoVoltarTexto: {
     color: "#1F3864",
-    textAlign: "center",
-    fontSize: 15,
-    fontWeight: "600",
+    fontSize: 16,
+    fontWeight: "700",
   },
 });

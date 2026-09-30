@@ -1,74 +1,92 @@
 import React, { useEffect, useState } from "react";
-import { View, ActivityIndicator, Text, StyleSheet } from "react-native";
-import { StatusBar } from "expo-status-bar";
+import { View, Text, StyleSheet } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import AppNavigator from "./src/navigation/AppNavigator";
 import { initDatabase } from "./src/database/db";
-import {
-  sincronizarPendentes,
-  iniciarListenerDeSincronizacaoAutomatica,
-} from "./src/services/syncService";
 
 export default function App() {
-  const [pronto, setPronto] = useState(false);
+  const [bancoPronto, setBancoPronto] = useState(false);
   const [erroInicializacao, setErroInicializacao] = useState(null);
 
   useEffect(() => {
-    let unsubscribeSync = () => {};
-
-    async function iniciar() {
+    async function iniciarBanco() {
       try {
-        // 1. Garante que o banco local (SQLite) esteja pronto antes de
-        //    qualquer tela tentar usá-lo.
         await initDatabase();
 
-        // 2. Tenta sincronizar pendências assim que o app abre (caso
-        //    existam análises feitas offline em uma sessão anterior).
-        sincronizarPendentes().catch(() => {});
+        console.log("[SQLite] Banco inicializado com sucesso.");
 
-        // 3. Registra o listener que sincroniza automaticamente sempre
-        //    que a conexão com a internet for restabelecida.
-        unsubscribeSync = iniciarListenerDeSincronizacaoAutomatica();
-
-        setPronto(true);
-      } catch (err) {
-        console.error("[App] Erro na inicialização:", err);
-        setErroInicializacao(err.message);
+        setBancoPronto(true);
+      } catch (error) {
+        console.error("[SQLite] Erro ao inicializar banco:", error);
+        setErroInicializacao(error?.message || String(error));
       }
     }
 
-    iniciar();
-
-    return () => unsubscribeSync();
+    iniciarBanco();
   }, []);
 
   if (erroInicializacao) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.erroTexto}>
-          Erro ao iniciar o aplicativo: {erroInicializacao}
-        </Text>
-      </View>
+      <SafeAreaProvider>
+        <View style={styles.center}>
+          <Text style={styles.titulo}>
+            Erro ao iniciar o aplicativo
+          </Text>
+
+          <Text style={styles.erro}>
+            {erroInicializacao}
+          </Text>
+        </View>
+      </SafeAreaProvider>
     );
   }
 
-  if (!pronto) {
+  if (!bancoPronto) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#1F3864" />
-      </View>
+      <SafeAreaProvider>
+        <View style={styles.center}>
+          <Text style={styles.carregando}>
+            Iniciando NutriScan...
+          </Text>
+        </View>
+      </SafeAreaProvider>
     );
   }
 
   return (
-    <>
-      <StatusBar style="light" />
+    <SafeAreaProvider>
       <AppNavigator />
-    </>
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  erroTexto: { color: "#C62828", textAlign: "center", fontSize: 15 },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+    backgroundColor: "#F7F8FA",
+  },
+
+  titulo: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#1F3864",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+
+  carregando: {
+    fontSize: 18,
+    color: "#1F3864",
+    fontWeight: "600",
+  },
+
+  erro: {
+    fontSize: 14,
+    color: "#C62828",
+    textAlign: "center",
+  },
 });

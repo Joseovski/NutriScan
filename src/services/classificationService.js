@@ -62,3 +62,22 @@ export function classifyProduct(valores) {
   if (classificacoes.includes(STATUS.MODERADO)) return STATUS.MODERADO;
   return STATUS.SAUDAVEL;
 }
+
+export function analisarNutrientes(valores) {
+  return {
+    acucares: classificarNutriente(
+      valores.acucares,
+      LIMITES.acucares
+    ),
+
+    sodio: classificarNutriente(
+      valores.sodio,
+      LIMITES.sodio
+    ),
+
+    gordurasSaturadas: classificarNutriente(
+      valores.gordurasSaturadas,
+      LIMITES.gordurasSaturadas
+    ),
+  };
+}
